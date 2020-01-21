@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+
+# Based on https://www.cups.org/doc/api-filter.html
+
+# Version history:
+# 1.0    17.09.2019  gw  Inital version
+
+import base64
+import logging
+import os
+import sys
+from printnodeapi import Gateway
+
+LOGFILE_PATH = "/var/log/cups/printnode_log"
+APIKEYFILE_PATH = "/etc/printNode.conf"
+JOBTITLE = "mi.solution"
+logging.basicConfig(level=logging.INFO, filename="%s" % LOGFILE_PATH, \
+    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Verify Parameter validity
+if not os.path.isfile(APIKEYFILE_PATH):
+    logging.critical("API Key file %s could not be found. Please ensure " \
+                     "that it exists and it is accessible", APIKEYFILE_PATH)
+    sys.stderr.write("ERROR: API Key file %s does not exists\n" % APIKEYFILE_PATH)
+    sys.exit(1)
+else:
+    with open(APIKEYFILE_PATH) as API_KEYFILE:
+        API_KEY = API_KEYFILE.read().replace("\n", "")
+
+# Check if ID is a valid Int
+PRINTER_URI = os.environ['DEVICE_URI']
+try:
+    PRINTER_ID = int(PRINTER_URI[12:])
+except ValueError:
+    logging.critical("Invalid PRINTER_ID detected: %s " \
+                     "Please ensure that the printers virtual address " \
+                     "is set correctly: printnode://{Printer ID}.", PRINTER_URI[12:])
+    sys.stderr.write("ERROR: Could not determine Printer_ID. "
+                     "Ensure that the printers virtual adress is set correctly\n")
+    sys.exit(1)
+
+# Get Inputslot
+OPTIONS = sys.argv[5].split(' ')
+INPUTSLOT = "default"
+for value in OPTIONS:
+    if value[:9] == "InputSlot":
+        INPUTSLOT = value[10:]
+        INPUTSLOT = INPUTSLOT.replace("_", " ")
+
+# Get file to be printed from commandline param or stdin and encode as B64
+STDIN = ""
+if int(len(sys.argv)) == 7:
+    FILEPATH = sys.argv[6]
+    with open(FILEPATH, "rb") as pdf_file:
+        RAW_B64 = base64.b64encode(bytes(pdf_file.read())).decode('utf-8')
+elif int(len(sys.argv)) == 6:
+    for line in sys.stdin:
+        STDIN += line
+    RAW_B64 = base64.b64encode(bytes(STDIN, encoding='utf-8')).decode('utf-8')
+
+# Init Gateway
+PRINTNODE_GW = Gateway(url='https://api.printnode.com', apikey='%s' % API_KEY)
+
+
+if INPUTSLOT == "default":
+    logging.info("Initate printJob with the following arguments: " \
+                         "PRINTER_ID=%d title=%s", PRINTER_ID, JOBTITLE)
+    PRINTNODE_GW.PrintJob(printer=PRINTER_ID, job_type='raw', title='%s' % JOBTITLE,
+                          base64='%s' % RAW_B64)
+else:
+    logging.info("INFO: Initate printJob with the following arguments: PRINTER_ID=%d title=%s" \
+                         "options={'bin': %s}", PRINTER_ID, JOBTITLE, INPUTSLOT)
+    PRINTNODE_GW.PrintJob(printer=PRINTER_ID, options={"bin": "%s" % INPUTSLOT},
+                          job_type='raw', title='%s' % JOBTITLE, base64='%s' % RAW_B64)
