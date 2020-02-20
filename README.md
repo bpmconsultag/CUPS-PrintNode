@@ -2,7 +2,7 @@
 CUPS backend enabling printing through the PrintNode Cloud.
 
 ## Prerequisites
-* python3 python3-requests python3-future
+* python3 python3-requests python3-future jq
 * CUPS
 * PrintNode-Python https://github.com/PrintNode/PrintNode-Python
 * PrintNode Account
@@ -21,7 +21,12 @@ CUPS backend enabling printing through the PrintNode Cloud.
 CUPS-PrintNode supports printing from different Trays. In order for these to Work the name of the InputSlots must be adjusted to the InputSlots name in PrintNode. 
 
 ### Requesting printer capabilities 
-The printer's capabilites can be requested with a curl command:
+
+Capabilities can be requested using the requestCapabilities.sh Script. This will turn the output into a much more readable format. 
+**Note:** For this script to work jq must be installed. 
+
+
+Alternatively Tthe printer's capabilites can also be requested with a curl command:
 
 **Note:** The API key must be terminated with a colon.
 
