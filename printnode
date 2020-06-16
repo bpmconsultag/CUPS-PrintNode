@@ -1,46 +1,111 @@
 #!/usr/bin/env python3
 
+"""CUPS Backend for PrintNode"""
+
 # Based on https://www.cups.org/doc/api-filter.html
+# Based on https://github.com/PrintNode/PrintNode-Python
+# Based on https://www.printnode.com/en/docs/api/curl#printjob-creating
 
 # Version history:
 # 1.0    17.09.2019  gw  Inital version
 # 1.1    21.01.2020  gw  Added CUPS JobID as Jobtitle
 # 1.2    20.02.2020  gw  Added support for Duplex
+# 1.3    04.06.2020  gw  Added check for A5 paper
+# 1.4    05.06.2020  gw  Changed config to yaml and added mutli account
+# 1.5    10.06.2020  gw  Add support for raw Print
 
 import base64
 import logging
 import os
 import sys
+import yaml
 from printnodeapi import Gateway
 
-#LOGFILE = open("/var/log/cups/printnode_log", "a")
+API_KEY = ""
 LOGFILE_PATH = "/var/log/cups/printnode_log"
-APIKEYFILE_PATH = "/etc/printNode.conf"
+PRINTNODE_CONFIG_PATH = "/etc/cups/printNode.yml"
 JOBTITLE = "mi.solution-" + sys.argv[1]
-logging.basicConfig(level=logging.INFO, filename="%s" % LOGFILE_PATH, \
-    format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Verify Parameter validity
-if not os.path.isfile(APIKEYFILE_PATH):
-    logging.critical("API Key file %s could not be found. Please ensure " \
-                     "that it exists and it is accessible", APIKEYFILE_PATH)
-    sys.stderr.write("ERROR: API Key file %s does not exists\n" % APIKEYFILE_PATH)
-    sys.exit(1)
-else:
-    with open(APIKEYFILE_PATH) as API_KEYFILE:
-        API_KEY = API_KEYFILE.read().replace("\n", "")
+PRINTERNAME = os.environ['PRINTER']
+WRITE_CONFIG = False
+PRINTNODE_GW = None
+DEBUG_LEVEL_SWITCHER = {
+    "debug": 10,
+    "info": 20,
+    "warning": 30,
+    "error": 40,
+    "critical": 50
+}
 
 # Check if ID is a valid Int
 PRINTER_URI = os.environ['DEVICE_URI']
 try:
     PRINTER_ID = int(PRINTER_URI[12:])
 except ValueError:
-    logging.critical("Invalid PRINTER_ID detected: %s " \
-                     "Please ensure that the printers virtual address " \
-                     "is set correctly: printnode://{Printer ID}.", PRINTER_URI[12:])
-    sys.stderr.write("ERROR: Could not determine Printer_ID. "
-                     "Ensure that the printers virtual adress is set correctly\n")
+    sys.stderr.write("CRIT: Could not determine Printer ID. "
+                     "Ensure that the printers adress is a printNode ID")
     sys.exit(1)
+
+# Parse printNode.yml config
+try:
+    with open("%s" % PRINTNODE_CONFIG_PATH, "r") as PRINTNODE_CONFIG_FILE:
+        PRINTNODE_CONFIG = yaml.safe_load(PRINTNODE_CONFIG_FILE)
+# Invalid YML
+except yaml.YAMLError as ex:
+    sys.stderr.write("CRIT: Could not parse yaml config file: %s" % (PRINTNODE_CONFIG_PATH))
+    sys.exit(2)
+# Cannot Access file
+except IOError:
+    sys.stderr.write("CRIT: Could not read config file: %s" % (PRINTNODE_CONFIG_PATH))
+    sys.exit(3)
+
+# Initate Log
+for LOG_LEVEL_LINE in PRINTNODE_CONFIG:
+    LOG_LEVEL = DEBUG_LEVEL_SWITCHER.get(LOG_LEVEL_LINE.get('LogLevel', "").lower(), 20)
+    break
+logging.basicConfig(level=LOG_LEVEL, filename="%s" % LOGFILE_PATH,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+for LINE in PRINTNODE_CONFIG:
+    PRINTERS = LINE.get("Printers", "")
+    if str(PRINTER_ID) in PRINTERS:
+        API_KEY = LINE.get("API_Key", "")
+
+# if printer is not in yaml file look it up in all accounts
+if not API_KEY:
+    logging.debug("Did not find ID %s in configfile %s", PRINTER_ID, PRINTNODE_CONFIG_PATH)
+    PRINTER_FOUND = None
+    for ACCOUNT in PRINTNODE_CONFIG:
+        API_KEY = ACCOUNT.get("API_Key", "")
+        if API_KEY != "":
+            PRINTNODE_GW = Gateway(url="https://api.printnode.com", apikey="%s" % API_KEY)
+            try:
+                PRINTER_FOUND = PRINTNODE_GW.printers(printer=PRINTER_ID)
+            except LookupError as ex:
+                # Printer not found
+                continue
+
+        # New Printer to config
+        if PRINTER_FOUND is not None:
+            WRITE_CONFIG = True
+            logging.debug("Adding Printer %d to configfile", PRINTER_ID)
+            if ACCOUNT["Printers"] == "":
+                ACCOUNT["Printers"] += "%s" % PRINTER_ID
+            else:
+                ACCOUNT["Printers"] += " %s" % PRINTER_ID
+            logging.debug("Printer %s not found in configfile", PRINTER_ID)
+            break
+
+    if PRINTER_FOUND is None:
+        logging.critical("Printer %s not belonging to any account. "
+                         "Ensure Printer_ID is valid", PRINTER_ID)
+        sys.stderr.write("CRIT: Printer does not belong to any account")
+        sys.exit(4)
+
+# Write new config to file
+if WRITE_CONFIG:
+    logging.debug("Writing new printer config file %s", PRINTNODE_CONFIG_PATH)
+    with open("%s" % PRINTNODE_CONFIG_PATH, "w") as PRINTNODE_CONFIG_FILE:
+        yaml.dump(PRINTNODE_CONFIG, PRINTNODE_CONFIG_FILE, default_flow_style=False)
 
 # Determine options
 CUPS_OPTIONS = sys.argv[5].split(' ')
@@ -49,33 +114,62 @@ for VALUE in CUPS_OPTIONS:
 
     if VALUE[:9] == "InputSlot":
         INPUTSLOT = VALUE[10:]
+        # Replace "_" with " " to enable Printnode Capabilities with spaces
         INPUTSLOT = INPUTSLOT.replace("_", " ")
         PRINTNODE_OPTIONS["bin"] = INPUTSLOT
 
     if VALUE[:6] == "Duplex":
-        PRINTNODE_OPTIONS["Duplex"] = "long-edge"
+        if VALUE[7:] != "None":
+            PRINTNODE_OPTIONS["duplex"] = "long-edge"
+
+    if VALUE[:10] == "Resolution":
+        PRINTNODE_OPTIONS["dpi"] = VALUE[11:]
+
+if PRINTNODE_OPTIONS:
+    logging.debug("Options found: %s", PRINTNODE_OPTIONS)
+else:
+    logging.debug("No options found")
+
+# Check if raw print
+CONTENT_TYPE = os.environ["CONTENT_TYPE"]
+logging.debug("Content type is %s", CONTENT_TYPE)
+RAW_PRINT = CONTENT_TYPE in ("application/vnd.cups-raw", "text/plain")
 
 # Get file to be printed from commandline param or stdin and encode as B64
 STDIN = ""
 if int(len(sys.argv)) == 7:
     FILEPATH = sys.argv[6]
-    with open(FILEPATH, "rb") as pdf_file:
-        PDF_B64 = base64.b64encode(bytes(pdf_file.read())).decode('utf-8')
+    logging.debug("Reading file %s", FILEPATH)
+    with open(FILEPATH, "rb") as PRINTFILE:
+        FILE_B64 = base64.b64encode(bytes(PRINTFILE.read())).decode('utf-8')
+
 elif int(len(sys.argv)) == 6:
+    logging.debug("Reading file from stdin")
     for line in sys.stdin:
         STDIN += line
-    PDF_B64 = base64.b64encode(bytes(STDIN, encoding='utf-8')).decode('utf-8')
 
-# Init Gateway
-PRINTNODE_GW = Gateway(url='https://api.printnode.com', apikey='%s' % API_KEY)
+    FILE_B64 = base64.b64encode(bytes(STDIN, encoding='utf-8')).decode('utf-8')
 
-if PRINTNODE_OPTIONS:
-    logging.info("Initate printJob with the following arguments: PRINTER_ID=%d title=%s " \
-                           "options=%s", PRINTER_ID, JOBTITLE, PRINTNODE_OPTIONS)
-    PRINTNODE_GW.PrintJob(printer=PRINTER_ID, options=PRINTNODE_OPTIONS,
-                          job_type='pdf', title='%s' % JOBTITLE, base64='%s' % PDF_B64)
+# Init Gateway if it isn't already
+if PRINTNODE_GW is None:
+    logging.debug("Initiating PrintNode gateway")
+    PRINTNODE_GW = Gateway(url='https://api.printnode.com', apikey='%s' % API_KEY)
+
+if RAW_PRINT:
+    logging.info("Initate raw print job with the following arguments: PRINTER_ID=%d title=%s",
+                 PRINTER_ID, JOBTITLE)
+    PRINTNODE_GW.PrintJob(printer=PRINTER_ID, job_type='raw', title='%s' % JOBTITLE,
+                          base64="%s" % FILE_B64)
 else:
-    logging.info("Initate printJob with the following arguments: " \
-                           "PRINTER_ID=%d title=%s", PRINTER_ID, JOBTITLE)
-    PRINTNODE_GW.PrintJob(printer=PRINTER_ID, job_type='pdf', title='%s' % JOBTITLE,
-                          base64='%s' % PDF_B64)
+    if PRINTNODE_OPTIONS:
+        logging.info("Initate print job with the following arguments: PRINTER_ID=%d title=%s " \
+                     "options=%s", PRINTER_ID, JOBTITLE, PRINTNODE_OPTIONS)
+        PRINTNODE_GW.PrintJob(printer=PRINTER_ID, options=PRINTNODE_OPTIONS,
+                              job_type='pdf', title='%s' % JOBTITLE, base64='%s' % FILE_B64)
+    else:
+        logging.info("Initate print job with the following arguments: " \
+                     "PRINTER_ID=%d title=%s", PRINTER_ID, JOBTITLE)
+        PRINTNODE_GW.PrintJob(printer=PRINTER_ID, job_type='pdf', title='%s' % JOBTITLE,
+                              base64='%s' % FILE_B64)
+
+logging.debug("Printjob %s finished", JOBTITLE)
