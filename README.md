@@ -12,11 +12,11 @@ CUPS backend enabling printing through the PrintNode Cloud.
 ## Installation
 1: Perform all prerequisites
 
-2: ```git clone https://github.com/bpmconsultag/CUPS-PrintNode.git```
+2: git clone https://github.com/bpmconsultag/CUPS-PrintNode.git
 
-3: ```cd CUPS-PrintNode```
+3: cd CUPS-PrintNode
 
-4: ```./setup.sh```
+4: ./setup.sh
 
 3: /usr/local/bin/printnode/requestCapabilities.sh
 
