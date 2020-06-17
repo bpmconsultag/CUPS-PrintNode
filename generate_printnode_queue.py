@@ -65,7 +65,7 @@ except ValueError:
 PPD_PATH = "/etc/cups/ppd/%s.ppd" % CUPS_QUEUE
 LPADMIN = "/usr/sbin/lpadmin"
 PRINTER_CONF_PATH = "/etc/cups/printers.conf"
-REQUEST_CAPABILITES_SCRIPT = "/usr/local/beeline/printNode/requestCapabilities.sh"
+REQUEST_CAPABILITES_SCRIPT = "/usr/local/bin/printnode/requestCapabilities.sh"
 
 # Fetch all printers capabilities
 try:
