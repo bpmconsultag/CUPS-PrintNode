@@ -23,4 +23,7 @@ touch /var/log/cups/printnode_log
 chown lp:lp /var/log/cups/printnode_log
 chmod 644 /var/log/cups/printnode_log
 
+cp printnode.ppd /usr/share/cups/model/
+chmod 644 /usr/share/cups/model/printnode.ppd
+
 echo "Installation executed sucessfully"
