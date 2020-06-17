@@ -1,0 +1,7 @@
+- LogLevel: info
+- API_Key: ''
+  Account: Account1
+  Printers: ''
+- API_Key: ''
+  Account: Account2
+  Printers: ''
