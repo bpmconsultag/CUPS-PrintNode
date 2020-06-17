@@ -10,19 +10,14 @@ CUPS backend enabling printing through the PrintNode Cloud.
 * Client with Installed PrintNode Agent
 
 ## Installation
-1: Perform all prerequisites
-
-2: git clone https://github.com/bpmconsultag/CUPS-PrintNode.git
-
-3: cd CUPS-PrintNode
-
-4: ./setup.sh
-
-3: /usr/local/bin/printnode/requestCapabilities.sh
-
-4: Note the ID of the desired printer
-
-5: /usr/local/bin/printnode/generate_printnode_queue.py -i {Printer ID} -q {Destination CUPS Queue}
+1. Perform all prerequisites
+2. git clone https://github.com/bpmconsultag/CUPS-PrintNode.git
+3. cd CUPS-PrintNode
+4. ./setup.sh
+5. Add your Print_API key to /etc/cups/printNode.yml (You may add additonal accounts)
+6. /usr/local/bin/printnode/requestCapabilities.sh
+7. Note the ID of the desired printer
+8. /usr/local/bin/printnode/generate_printnode_queue.py -i {Printer ID} -q {Destination CUPS Queue}
 
 The script generate_printnode_queue.py will automatically generate CUPS Queue using the generic PrintNode PPD and inserting the Name of the inputSlots into it.
 
