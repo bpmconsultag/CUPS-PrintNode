@@ -2,72 +2,27 @@
 CUPS backend enabling printing through the PrintNode Cloud.
 
 ## Prerequisites
-* python3 python3-requests python3-future jq
+* packages: python3 python3-requests python3-future jq cups
+* python packages: yaml 
 * CUPS
 * PrintNode-Python https://github.com/PrintNode/PrintNode-Python
 * PrintNode Account
 * Client with Installed PrintNode Agent
 
 ## Installation
-1. Move printnode to /usr/lib/cups/backend/printnode
-2. Get API Key from https://printnode.com
-3. Write API Key to /etc/printNode.conf
-4. Get Printer ID from https://app.printnode.com/devices
-5. Add CUPS queue like the following: 
+1: Perform all prerequisites
+2: ``` git clone https://github.com/bpmconsultag/CUPS-PrintNode.git
+cd CUPS-PrintNode
+./setup.sh ```
+3: /usr/local/bin/printnode/requestCapabilities.sh
+4: Note the ID of the desired printer
+5: /usr/local/bin/printnode/generate_printnode_queue.py -i {Printer ID} -q {Destination CUPS Queue}
 
-``` lpadmin -p {PRINTER NAME} -E -v printnode://{PRINTNODE PRINTER ID} -P {PATH TO PPD} ```
-  
-## Capabilities
-CUPS-PrintNode supports printing from different Trays. In order for these to Work the name of the InputSlots must be adjusted to the InputSlots name in PrintNode. 
-
-### Requesting printer capabilities 
-
-Capabilities can be requested using the requestCapabilities.sh Script. This will turn the output into a much more readable format. 
-**Note:** For this script to work jq must be installed. 
-
-
-Alternatively Tthe printer's capabilites can also be requested with a curl command:
-
-**Note:** The API key must be terminated with a colon.
-
-``` curl https://api.printnode.com/printers -u {PrintNode API key}: | less ```
-
-**Note:** Depending on the language which the PrintNode agent was installed as the name of the InputSlots can be different. In some Cases the InputSlot definition of PrintNode contain spaces. CUPS is not able to handle spaces in the name of an InputSlot. So if that is the case the spaces in the PPD File must be replaced with a underscore as seen in the example following:
-
-Printer=HP LaserJet MFP M426dw
-
-Vendor PPD:
-```
-*InputSlot Tray1/Tray 1: "<</MediaPosition 3 /ManualFeed false>> setpagedevice"
-*InputSlot Tray2/Tray 2: "<</MediaPosition 0 /ManualFeed false>> setpagedevice"
-*InputSlot Tray3/Tray 3: "<</MediaPosition 1 /ManualFeed false>> setpagedevice"
-*InputSlot ManualFeed/Manual Feed: "<</MediaPosition 3 /ManualFeed true>> setpagedev
-InputSlot definition in PPD:
-```
-
-PrintNode Capabilities InputSlot:
-```
- "capabilities": {
-      "bins": [
-        "Auto Select",
-        "Manual Feed",
-        "Tray 1",
-        "Tray 2",
-        "Tray 3"
-      ],
-....
-```
-
-Now the PPD must be adjusted to match the following so the InputSlots are the same in the PPD and the PrintNode cloud. The following is desired:
-
-Adjusted PPD:
-```
-*InputSlot Tray_1/Tray 1: "<</MediaPosition 3 /ManualFeed false>> setpagedevice"
-*InputSlot Tray_2/Tray 2: "<</MediaPosition 0 /ManualFeed false>> setpagedevice"
-*InputSlot Tray_3/Tray 3: "<</MediaPosition 1 /ManualFeed false>> setpagedevice"
-*InputSlot Manual_Feed/Manual Feed: "<</MediaPosition 3 /ManualFeed true>> setpagedev
-InputSlot definition in PPD:
-```
+The script generate_printnode_queue.py will automatically generate CUPS Queue using the generic PrintNode PPD and inserting the Name of the inputSlots into it.
 
 ## Additional Information
 CUPS-PrintNode stores a logfile in /var/log/cups/printnode_log
+
+## Futrther Ressources:
+https://www.printnode.com/en/docs/api/curl
+https://github.com/PrintNode/PrintNode-Python
