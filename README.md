@@ -26,4 +26,5 @@ CUPS-PrintNode stores a logfile in /var/log/cups/printnode_log
 
 ## Futrther Ressources:
 https://www.printnode.com/en/docs/api/curl
+
 https://github.com/PrintNode/PrintNode-Python
