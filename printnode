@@ -24,7 +24,7 @@ from printnodeapi import Gateway
 API_KEY = ""
 LOGFILE_PATH = "/var/log/cups/printnode_log"
 PRINTNODE_CONFIG_PATH = "/etc/cups/printNode.yml"
-JOBTITLE = "mi.solution-" + sys.argv[1]
+JOBTITLE = sys.argv[1]
 PRINTERNAME = os.environ['PRINTER']
 WRITE_CONFIG = False
 PRINTNODE_GW = None
@@ -118,12 +118,27 @@ for VALUE in CUPS_OPTIONS:
         INPUTSLOT = INPUTSLOT.replace("_", " ")
         PRINTNODE_OPTIONS["bin"] = INPUTSLOT
 
-    if VALUE[:6] == "Duplex":
-        if VALUE[7:] != "None":
+    elif VALUE[:6] == "Duplex":
+        if VALUE[7:] == "DuplexNoTumble":
             PRINTNODE_OPTIONS["duplex"] = "long-edge"
+        if VALUE[7:] == "DuplexTumble":
+            PRINTNODE_OPTIONS["duplex"] = "short-edge"
 
-    if VALUE[:10] == "Resolution":
-        PRINTNODE_OPTIONS["dpi"] = VALUE[11:]
+    elif VALUE[:10] == "ColorModel":
+        if VALUE[11:].lower() == "gray":
+            PRINTNODE_OPTIONS["color"] = False
+        if VALUE[11:].lower() == "cymk":
+            PRINTNODE_OPTIONS["color"] = True
+
+    elif VALUE[:8] == "PageSize":
+        PRINTNODE_OPTIONS["paper"] = VALUE[8:]
+
+def set_a5_options():
+    """ Force A5 settings """
+    logging.debug("Setting A5 Options")
+    PRINTNODE_OPTIONS["paper"] = "A5"
+    PRINTNODE_OPTIONS["bin"] = "Universalzufuhr"
+    PRINTNODE_OPTIONS["rotate"] = 90
 
 if PRINTNODE_OPTIONS:
     logging.debug("Options found: %s", PRINTNODE_OPTIONS)
@@ -143,10 +158,17 @@ if int(len(sys.argv)) == 7:
     with open(FILEPATH, "rb") as PRINTFILE:
         FILE_B64 = base64.b64encode(bytes(PRINTFILE.read())).decode('utf-8')
 
+    # Hack: Check if Paper is A5 (ABB-197)
+    PAGESIZE = os.popen("pdfinfo %s | grep 'Page size:'" % (FILEPATH)).read()
+    if "595.275 x 419.527 pts" in PAGESIZE:
+        set_a5_options()
+
 elif int(len(sys.argv)) == 6:
     logging.debug("Reading file from stdin")
     for line in sys.stdin:
         STDIN += line
+        if "595.275 419.527" in line:
+            set_a5_options()
 
     FILE_B64 = base64.b64encode(bytes(STDIN, encoding='utf-8')).decode('utf-8')
 
