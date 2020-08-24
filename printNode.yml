@@ -1,8 +1,13 @@
----
 - LogLevel: info
-- Account: Account-1 comment
-  API_Key: 
+- Account: Account 1
+  API_Key: {API KEY Account 1}
   Printers: ''
-- Account: Account-2 comment
-  API_Key: 
+  Override_Options:
+  - Printer_ID: {Printer ID}
+    Duplex: one-sided
+    A5_Bin: Universalzufuhr
+    A5_Rotation: 90
+- Account: Account 2
+  API_Key: {API Key Account 2}
   Printers: ''
+  A5_Printer: {Printer ID}
