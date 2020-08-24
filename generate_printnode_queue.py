@@ -3,11 +3,12 @@
 """
 Script to automatically create CUPS Queue based on PrintNode Printer ID
 Input slot are inserted into PPD
-PrintNode Name is inserted into Info field in printers.conf
 """
 
 # Version history:
-# 0.1    15.06.2020  gw  Inital
+# 0.1   15.06.2020  gw  Inital
+# 0.2   23.06.2020  gw  Set Printer Desc with lpadmin commmand
+# 0.3   30.06.2020  gw  Added custom cups queue description (-d)
 
 # Command line arguments:
 # -i PrintNode Printer ID
@@ -25,9 +26,11 @@ def print_usage():
     print("Usage: generatePPD.py -i {PrinterNode Printer ID} (Required)")
     print("       generatePPD.py -q {CUPS queue to be created/modified} "\
           "(Required)")
+    print("       generatePPD.py -d {CUPS queue description}")
 
 PRINTER_ID = None
 CUPS_QUEUE = None
+PRINTER_DESC = ''
 
 # Validate Params
 if len(sys.argv) == 1:
@@ -40,6 +43,8 @@ for i in range(1, len(sys.argv)):
             PRINTER_ID = sys.argv[i + 1]
         if sys.argv[i] == "-q":
             CUPS_QUEUE = sys.argv[i + 1]
+        if sys.argv[i] == "-d":
+            PRINTER_DESC = sys.argv[i + 1]
         if sys.argv[i] == "--help" or sys.argv[i] == "-h":
             print_usage()
             sys.exit(0)
@@ -102,7 +107,7 @@ if not PRINTER_CAPABILITIES_LIST:
 
 # Generate capabilities dict
 def prepare_values(value):
-    """ Format strings of PrintNode capabilitie to only contain values """
+    """ Format strings of PrintNode capabilities to only contain values """
     return value[value.index(":"):].replace(",", "").replace(": ", \
         "").replace('"', "")
 
@@ -124,7 +129,8 @@ for line in PRINTER_CAPABILITIES_LIST:
               line[line.index('"'):].replace(" ", "_"))
 
     if "\"name\"" in line:
-        PRINTER_CAPABILITIES_DICT["name"] = prepare_values(line)
+        if not PRINTER_DESC:
+            PRINTER_DESC = prepare_values(line)
     elif "\"InputTrays\"" in line:
         READING_INPUT_SLOTS = True
 
@@ -134,7 +140,8 @@ print("Capabilities found!")
 print("Creating queue: %s" % CUPS_QUEUE)
 try:
     subprocess.run(["%s" % LPADMIN, "-p", "%s" % CUPS_QUEUE,
-                    "-E", "-v", "printnode://%s" % PRINTER_ID, "-m", "printnode.ppd"],
+                    "-E", "-v", "printnode://%s" % PRINTER_ID, "-m", "printnode.ppd",
+                    "-D", "%s" % PRINTER_DESC],
                    check=True)
 except subprocess.CalledProcessError as ex:
     print("lpadmin command failed with the following output:")
@@ -163,18 +170,3 @@ for line in PPD_DATA:
 
 with open("%s" % PPD_PATH, "w") as PPD_FILE:
     PPD_FILE.write(MODIFIED_PPD_DATA)
-
-# Write PrintNode Name to printers.conf
-MODIFIED_PRINTER_CONF_DATA = ""
-with open("%s" % PRINTER_CONF_PATH, "r") as PRINTER_CONF_FILE:
-    PRINTER_CONF_DATA = PRINTER_CONF_FILE.readlines()
-
-for line in PRINTER_CONF_DATA:
-    if "Info %s" % CUPS_QUEUE in line:
-        MODIFIED_PRINTER_CONF_DATA += "Info %s" % \
-            PRINTER_CAPABILITIES_DICT["name"]
-    else:
-        MODIFIED_PRINTER_CONF_DATA += line
-
-with open("%s" % PRINTER_CONF_PATH, "w") as PRINTER_CONF_FILE:
-    PRINTER_CONF_FILE.write(MODIFIED_PRINTER_CONF_DATA)
