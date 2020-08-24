@@ -21,6 +21,27 @@ CUPS backend enabling printing through the PrintNode Cloud.
 
 The script generate_printnode_queue.py will automatically generate CUPS Queue using the generic PrintNode PPD and inserting the Name of the inputSlots into it.
 
+## printNode.yml configuration parameters  (see printNode.yml for examples)
+Account: Account Descripton
+
+API_Key: PrintNode API Key
+
+Printers: IDs of printers belonging to this account
+
+A5_Printer: Alternative queue for A5 Prints (Will be used always if the document is A5)
+
+Override_Options: Allows override options. Options set below this will always override anything set previously
+
+Printer_ID: ID of the printer for which overrides will take effect
+
+A5_Bin: Override option: Bin for A5 Paper
+
+A5_Rotation: Override option: Rotation for A5 Prints
+
+A5_Duplex: Override option: Duplex for A5
+
+Duplex: Override option: Duplex globally (If set together with A5_Duplex, A5_Duplex will be prefered for A5 prints because it is more specific)
+
 ## Additional Information
 CUPS-PrintNode stores a logfile in /var/log/cups/printnode_log
 
