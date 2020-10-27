@@ -9,164 +9,111 @@ Input slot are inserted into PPD
 # 0.1   15.06.2020  gw  Inital
 # 0.2   23.06.2020  gw  Set Printer Desc with lpadmin commmand
 # 0.3   30.06.2020  gw  Added custom cups queue description (-d)
+# 1.0   23.10.2020  gw  Added manipulation of vendor ppd
 
-# Command line arguments:
-# -i PrintNode Printer ID
-# -q Target CUPS Queue
-
-import ast
-import sys
+import argparse
+import re
 import subprocess
+import sys
+import yaml
+from printnodeapi import Gateway
 
-def print_usage():
-    """Info and usage of command line parameters"""
-    print("Script to create a CUPS Queue from a PrintNode Printer ID")
-    print("InputSlots are automatically injected into the ppd file")
-    print("PrintNode Name will be inserted into printer.conf Info field\n")
-    print("Usage: generatePPD.py -i {PrinterNode Printer ID} (Required)")
-    print("       generatePPD.py -q {CUPS queue to be created/modified} "\
-          "(Required)")
-    print("       generatePPD.py -d {CUPS queue description}")
+# Parse Arguments
+ARGPARSER = argparse.ArgumentParser(description="Generate CUPS Queue from PrintNode PrinterID")
+ARGPARSER.add_argument("-i", "--id", required=True, type=int, help="PrintNode Printer ID")
+ARGPARSER.add_argument("-q", "--queue", required=True, help="CUPS Queue name to be created")
+ARGPARSER.add_argument("-m", "--model", required=False, default="printnode.ppd", help="Printer "\
+ "Model (See available Models in /usr/share/cups/model) The value of this must end with \".ppd\"")
+ARGPARSER.add_argument("-d", "--desc", required=False, default="PrintNode printer",
+                       help="Description if CUPS Queue")
+ARGUMENTS = vars(ARGPARSER.parse_args())
 
-PRINTER_ID = None
-CUPS_QUEUE = None
-PRINTER_DESC = ''
+# Global vars 
+PRINTNODE_CONFIG_PATH = "/etc/cups/printNode.yml"
+LPADMIN = "/usr/sbin/lpadmin"
+PRINTNODE_CONFIG_PATH = "/etc/cups/printNode.yml"
+PRINTER_CONF_PATH = "/etc/cups/printers.conf"
+API_KEYS = []
+PRINTER_ID = ARGUMENTS["id"]
+CUPS_QUEUE = ARGUMENTS["queue"]
+PRINTER_DESC = ARGUMENTS["desc"]
+MODEL = ARGUMENTS["model"]
+PPD_PATH = "/etc/cups/ppd/%s.ppd" % CUPS_QUEUE
 
-# Validate Params
-if len(sys.argv) == 1:
-    print_usage()
-    sys.exit(0)
-
-for i in range(1, len(sys.argv)):
-    try:
-        if sys.argv[i] == "-i":
-            PRINTER_ID = sys.argv[i + 1]
-        if sys.argv[i] == "-q":
-            CUPS_QUEUE = sys.argv[i + 1]
-        if sys.argv[i] == "-d":
-            PRINTER_DESC = sys.argv[i + 1]
-        if sys.argv[i] == "--help" or sys.argv[i] == "-h":
-            print_usage()
-            sys.exit(0)
-    except IndexError:
-        sys.stderr.write("Error: Wrong number of parameters specified\n\n")
-        print_usage()
-        sys.exit(1)
-
-if PRINTER_ID is None or CUPS_QUEUE is None:
-    sys.stderr.write("Error: Wrong number of parameters specified\n\n")
-    print_usage()
+# Get API keys
+try:
+    with open("%s" % PRINTNODE_CONFIG_PATH, "r") as PRINTNODE_CONFIG_FILE:
+        PRINTNODE_CONFIG = yaml.safe_load(PRINTNODE_CONFIG_FILE)
+except yaml.YAMLError as ex:
+    sys.stderr.write("Error: Could not parse yaml config file: %s" % (PRINTNODE_CONFIG_PATH))
+    sys.exit(1)
+except IOError:
+    sys.stderr.write("Error: Could not read config file: %s" % (PRINTNODE_CONFIG_PATH))
     sys.exit(2)
 
-try:
-    PRINTER_ID_INT = int(PRINTER_ID)
-except ValueError:
-    sys.stderr.write("Please specify PrintNode Printer ID as first parameter " \
-        "Parameter was no valid Int\n\n")
-    print_usage()
-    sys.exit(3)
+# Get all API Keys from printNode.yml
+for ACCOUNT in PRINTNODE_CONFIG:
+    API_KEY = ACCOUNT.get("API_Key", "")
+    if API_KEY:
+        API_KEYS.append(API_KEY)
 
-# Global vars
-PPD_PATH = "/etc/cups/ppd/%s.ppd" % CUPS_QUEUE
-LPADMIN = "/usr/sbin/lpadmin"
-PRINTER_CONF_PATH = "/etc/cups/printers.conf"
-REQUEST_CAPABILITES_SCRIPT = "/usr/local/bin/printnode/requestCapabilities.sh"
+# Get printer settings
+for API_KEY in API_KEYS:
+    try:
+        PRINTNODE_GW = Gateway(url="https://api.printnode.com", apikey="%s" % API_KEY)
+        PRINTER_PROPERTIES = PRINTNODE_GW.printers(printer=int(PRINTER_ID))
+    except LookupError:
+        pass
 
-# Fetch all printers capabilities
-try:
-    RESPONSE = subprocess.run("%s" % REQUEST_CAPABILITES_SCRIPT,
-                              check=True, stdout=subprocess.PIPE)
-except subprocess.CalledProcessError as ex:
-    print("requestCapabilities.sh script failed with the following output:")
-    print("%s" % ex)
-    sys.exit(4)
-
-# Generate Capabilities array
-CAPABILITIES = RESPONSE.stdout.decode('utf-8').replace("'", '"')
-CAPABILITIES = CAPABILITIES.split("\n")
-
-PARSING_CONFIG = False
-PRINTER_CAPABILITIES_LIST = []
-
-# Preperate capabilities list
-for line in CAPABILITIES:
-    if PARSING_CONFIG:
-        if line != "}":
-            PRINTER_CAPABILITIES_LIST.append(line)
-        else:
-            break
-
-    if "\"id\"" in line:
-        PARSING_CONFIG = PRINTER_ID in line
-
-if not PRINTER_CAPABILITIES_LIST:
-    sys.stderr.write("Error: Could not find Printer." \
-      " Ensure the printer ID is correct\n\n")
-    print_usage()
-    sys.exit(5)
-
-# Generate capabilities dict
-def prepare_values(value):
-    """ Format strings of PrintNode capabilities to only contain values """
-    return value[value.index(":"):].replace(",", "").replace(": ", \
-        "").replace('"', "")
-
-PRINTER_CAPABILITIES_DICT = {}
-READING_INPUT_SLOTS = False
-INPUT_SLOTS = ""
-for line in PRINTER_CAPABILITIES_LIST:
-    if "]," in line:
-        PRINTER_CAPABILITIES_DICT["InputSlots"] = INPUT_SLOTS
-        READING_INPUT_SLOTS = False
-
-    # Reading input slot and replace spaces with underscores
-    if READING_INPUT_SLOTS:
-        if INPUT_SLOTS == "":
-            INPUT_SLOTS = "%s" % \
-              line[line.index('"'):].replace(" ", "_")
-        else:
-            INPUT_SLOTS = "%s %s" % (INPUT_SLOTS, \
-              line[line.index('"'):].replace(" ", "_"))
-
-    if "\"name\"" in line:
-        if not PRINTER_DESC:
-            PRINTER_DESC = prepare_values(line)
-    elif "\"InputTrays\"" in line:
-        READING_INPUT_SLOTS = True
-
-print("Capabilities found!")
+INPUT_SLOTS = PRINTER_PROPERTIES[4][0]
 
 # Create queue
 print("Creating queue: %s" % CUPS_QUEUE)
 try:
     subprocess.run(["%s" % LPADMIN, "-p", "%s" % CUPS_QUEUE,
-                    "-E", "-v", "printnode://%s" % PRINTER_ID, "-m", "printnode.ppd",
+                    "-E", "-v", "printnode://%s" % PRINTER_ID, "-m", "%s" % MODEL,
                     "-D", "%s" % PRINTER_DESC],
                    check=True)
 except subprocess.CalledProcessError as ex:
     print("lpadmin command failed with the following output:")
     print("%s" % ex)
-    sys.exit(6)
+    sys.exit(3)
 
 with open("%s" % PPD_PATH, "r") as PPD_FILE:
     PPD_DATA = PPD_FILE.readlines()
 
-INPUT_SLOTS = ast.literal_eval("[ %s ]" % PRINTER_CAPABILITIES_DICT["InputSlots"])
 
 # Inject InputSlot definitions into PPD file
 MODIFIED_PPD_DATA = ""
-INPUT_SLOT_WRITTEN = False
+INPUT_SLOTS_WRITTEN = False
 for line in PPD_DATA:
-    if "*InputSlot " in line and not INPUT_SLOT_WRITTEN:
-        print("Writing InputSlot Definitons to PPD")
-        for input_slot in INPUT_SLOTS:
-            MODIFIED_PPD_DATA += "*InputSlot %s/%s: \"\"\n" \
-              % (input_slot, input_slot)
-        INPUT_SLOT_WRITTEN = True
+
+    if re.match(r"^\*InputSlot", line) is not None:
+
+        # If INPUT_SLOTS were not writte yet
+        if not INPUT_SLOTS_WRITTEN:
+            print("Writing InputSlot Definitons to PPD")
+            for INPUT_SLOT in INPUT_SLOTS:
+                PREPPED_INPUT_SLOT = INPUT_SLOT.replace(" ", "_")
+                MODIFIED_PPD_DATA += "*InputSlot %s/%s: \"\"\n" % (PREPPED_INPUT_SLOT, INPUT_SLOT)
+            INPUT_SLOTS_WRITTEN = True
+
+        # If INPUT_SLOTS were already written skip original definitions
+        else:
+            continue
+
     elif "*DefaultInputSlot" in line:
         MODIFIED_PPD_DATA += "*DefaultInputSlot: %s\n" % INPUT_SLOTS[0]
     else:
         MODIFIED_PPD_DATA += line
 
+# Write manipulated PPD Data
 with open("%s" % PPD_PATH, "w") as PPD_FILE:
     PPD_FILE.write(MODIFIED_PPD_DATA)
+
+print("Restarting CUPS")
+try:
+    subprocess.run(["service", "cups", "restart"], check=True)
+except subprocess.CalledProcessError as ex:
+    print("CUPS failed to restart with the following error: %s" % ex)
+    print("See \"service cups status\" or /var/log/cups/error_log")
