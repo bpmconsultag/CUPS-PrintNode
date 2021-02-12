@@ -16,7 +16,8 @@
 # 1.5.1  15.07.2020  gw  Prevent printNode.yml from being sorted alphabeticly
 # 1.6    22.07.2020  gw  Added handling for A5_Overrides
 # 1.6.1  27.07.2020  gw  Changed A5_Overrides to be printer specific
-# 1.7    24.08.2020  gw  Added A5 override "duplex" and globaloveride "duplex"
+# 1.7    24.08.2020  gw  Added A5 and global override option duplex
+# 1.8    12.02.2021  gw  Added color override Option and allowed overrides to be queue specific
 
 import base64
 import logging
@@ -25,6 +26,7 @@ import sys
 import yaml
 from printnodeapi import Gateway
 
+QUEUE = os.environ.get("PRINTER")
 PRINTER_ID = ""
 API_KEY = ""
 LOGFILE_PATH = "/var/log/cups/printnode_log"
@@ -105,7 +107,7 @@ for ACCOUNT in PRINTNODE_CONFIG:
 
     # Check if printer ID is in printNode.yml
     PRINTERS = ACCOUNT.get("Printers", "")
-    if str(PRINTER_ID) in PRINTERS:
+    if str(PRINTER_ID) in str(PRINTERS):
         API_KEY = ACCOUNT.get("API_Key", "")
 
         # Get A5 Printer
@@ -119,17 +121,20 @@ for ACCOUNT in PRINTNODE_CONFIG:
 
     if OVERRIDE_OPTIONS:
         for PRINTER_OVERRIDES in OVERRIDE_OPTIONS:
-            if PRINTER_OVERRIDES.get("Printer_ID", "") == PRINTER_ID:
+            if (PRINTER_OVERRIDES.get("Printer_ID", "") == PRINTER_ID or
+                    PRINTER_OVERRIDES.get("Queue", "") == QUEUE):
                 for key, value in PRINTER_OVERRIDES.items():
                     if key == "Duplex":
                         GLOBAL_PRINTER_OVERRIDES["duplex"] = value
+                    elif key == "Color":
+                        GLOBAL_PRINTER_OVERRIDES["color"] = value
                     elif key == "A5_Bin":
                         A5_PRINTER_OVERRIDE_OPTIONS["bin"] = value
                     elif key == "A5_Rotation":
                         A5_PRINTER_OVERRIDE_OPTIONS["rotate"] = value
                     elif key == "A5_Duplex":
                         A5_PRINTER_OVERRIDE_OPTIONS["duplex"] = value
-                    elif key == "Printer_ID":
+                    elif key == "Printer_ID" or key == "Queue":
                         continue
                     else:
                         logging.warning("%s is not a valid override options", key)
