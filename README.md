@@ -21,6 +21,8 @@ CUPS backend enabling printing through the PrintNode Cloud.
 
 The script generate_printnode_queue.py will automatically generate CUPS Queue using the generic PrintNode PPD and inserting the Name of the inputSlots into it.
 
+If the queue should be generated without a ppd, use "-m raw". 
+
 ## printNode.yml configuration parameters  (see printNode.yml for examples)
 Account: Account Descripton
 
