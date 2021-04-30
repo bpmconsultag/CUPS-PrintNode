@@ -18,6 +18,7 @@
 # 1.6.1  27.07.2020  gw  Changed A5_Overrides to be printer specific
 # 1.7    24.08.2020  gw  Added A5 and global override option duplex
 # 1.8    12.02.2021  gw  Added color override Option and allowed overrides to be queue specific
+# 1.8.1  12.04.2021  gw  Fixed bug when adding new printer ID to printnode.yml
 
 import base64
 import logging
@@ -164,9 +165,9 @@ if not API_KEY:
             WRITE_CONFIG = True
             logging.debug("Added Printer %d to configfile", PRINTER_ID)
             if ACCOUNT["Printers"] == "":
-                ACCOUNT["Printers"] += "%s" % PRINTER_ID
+                ACCOUNT["Printers"] = "%s" % str(PRINTER_ID)
             else:
-                ACCOUNT["Printers"] += " %s" % PRINTER_ID
+                ACCOUNT["Printers"] = "%s %s" % (ACCOUNT["Printers"], str(PRINTER_ID))
             break
 
     if PRINTER_FOUND is None:
