@@ -42,6 +42,8 @@ A5_Rotation: Override option: Rotation for A5 Prints
 
 A5_Duplex: Override option: Duplex for A5
 
+A5_Printer: Alternative queue for A5 Prints (Will be used always if the document is A5)
+
 Duplex: Override option: Duplex globally (If set together with A5_Duplex, A5_Duplex will be prefered for A5 prints because it is more specific)
 
 ## Additional Information
