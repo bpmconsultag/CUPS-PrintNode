@@ -19,6 +19,8 @@
 # 1.7    24.08.2020  gw  Added A5 and global override option duplex
 # 1.8    12.02.2021  gw  Added color override Option and allowed overrides to be queue specific
 # 1.8.1  12.04.2021  gw  Fixed bug when adding new printer ID to printnode.yml
+# 1.9    10.10.2022  gw  Allow Printer specific A5_Printer overrides (BEE-33584)
+# 1.10   11.10.2022  gw  Fixed bug where A5_Printer override_options were ignored (BEE-33584)
 
 import base64
 import logging
@@ -46,13 +48,38 @@ DEBUG_LEVEL_SWITCHER = {
 # Override Vairables
 IS_A5 = False
 A5_PRINTER = ''
-A5_PRINTER_OVERRIDE_OPTIONS = {"paper": "A5"}
+A5_PRINTER_OVERRIDE_OPTIONS = {}
 GLOBAL_PRINTER_OVERRIDES = {}
 
 def set_a5_options(overrides):
     """ Force A5 settings """
     PRINTNODE_OPTIONS.update(overrides)
+    PRINTNODE_OPTIONS["paper"] = "A5"
     logging.info("Setting A5 Overrides: %s", overrides)
+
+def get_overrides(ID, OVERRIDE_OPTIONS):
+    GLOBAL_PRINTER_OVERRIDES.clear()
+    A5_PRINTER_OVERRIDE_OPTIONS.clear()
+    for PRINTER_OVERRIDES in OVERRIDE_OPTIONS:
+        if (PRINTER_OVERRIDES.get("Printer_ID", "") == ID or
+                PRINTER_OVERRIDES.get("Queue", "") == QUEUE):
+            for KEY, VAL in PRINTER_OVERRIDES.items():
+                if KEY == "Duplex":
+                    GLOBAL_PRINTER_OVERRIDES["duplex"] = VAL
+                elif KEY == "Color":
+                    GLOBAL_PRINTER_OVERRIDES["color"] = VAL
+                elif KEY == "A5_Bin":
+                    A5_PRINTER_OVERRIDE_OPTIONS["bin"] = VAL
+                elif KEY == "A5_Rotation":
+                    A5_PRINTER_OVERRIDE_OPTIONS["rotate"] = VAL
+                elif KEY == "A5_Duplex":
+                    A5_PRINTER_OVERRIDE_OPTIONS["duplex"] = VAL
+                elif KEY == "A5_Printer":
+                    return VAL
+                elif KEY in ("Printer_ID", "Queue"):
+                    continue
+                else:
+                    logging.warning("%s is not a valid override options", KEY)
 
 # Check if ID is a valid Int
 PRINTER_URI = os.environ['DEVICE_URI']
@@ -106,39 +133,26 @@ elif int(len(sys.argv)) == 6:
 # Parse Config
 for ACCOUNT in PRINTNODE_CONFIG:
 
-    # Check if printer ID is in printNode.yml
     PRINTERS = ACCOUNT.get("Printers", "")
-    if str(PRINTER_ID) in str(PRINTERS):
-        API_KEY = ACCOUNT.get("API_Key", "")
-
-        # Get A5 Printer
-        if IS_A5:
-            if "A5_Printer" in ACCOUNT.keys():
-                PRINTER_ID = ACCOUNT.get("A5_Printer")
-                logging.debug("Setting Queue to A5 Printer: %s", PRINTER_ID)
 
     # Get override Options
     OVERRIDE_OPTIONS = ACCOUNT.get("Override_Options", "")
-
     if OVERRIDE_OPTIONS:
-        for PRINTER_OVERRIDES in OVERRIDE_OPTIONS:
-            if (PRINTER_OVERRIDES.get("Printer_ID", "") == PRINTER_ID or
-                    PRINTER_OVERRIDES.get("Queue", "") == QUEUE):
-                for key, value in PRINTER_OVERRIDES.items():
-                    if key == "Duplex":
-                        GLOBAL_PRINTER_OVERRIDES["duplex"] = value
-                    elif key == "Color":
-                        GLOBAL_PRINTER_OVERRIDES["color"] = value
-                    elif key == "A5_Bin":
-                        A5_PRINTER_OVERRIDE_OPTIONS["bin"] = value
-                    elif key == "A5_Rotation":
-                        A5_PRINTER_OVERRIDE_OPTIONS["rotate"] = value
-                    elif key == "A5_Duplex":
-                        A5_PRINTER_OVERRIDE_OPTIONS["duplex"] = value
-                    elif key == "Printer_ID" or key == "Queue":
-                        continue
-                    else:
-                        logging.warning("%s is not a valid override options", key)
+        # If alternative A5 Printer is defined get override Options again
+        DIFFERENT_A5_PRINTER = get_overrides(PRINTER_ID, OVERRIDE_OPTIONS)
+        if DIFFERENT_A5_PRINTER and IS_A5:
+            PRINTER_ID = DIFFERENT_A5_PRINTER
+            get_overrides(PRINTER_ID, OVERRIDE_OPTIONS)
+
+    # Check if printer ID is in printNode.yml
+    if str(PRINTER_ID) in str(PRINTERS):
+        API_KEY = ACCOUNT.get("API_Key", "")
+
+        # Get account specific A5 Printer if no printer or queue specific printer is specfied
+        if IS_A5 and "A5_Printer" in ACCOUNT and not DIFFERENT_A5_PRINTER:
+            PRINTER_ID = ACCOUNT.get("A5_Printer")
+            logging.debug("Setting Queue to A5 Printer: %s", PRINTER_ID)
+            get_overrides(PRINTER_ID, OVERRIDE_OPTIONS)
 
 # if printer is not in printNode.yml look it up in all accounts
 if not API_KEY:
@@ -155,10 +169,9 @@ if not API_KEY:
                 continue
 
         # Get A5 Printer
-        if IS_A5:
-            if "A5_Printer" in ACCOUNT.keys():
-                PRINTER_ID = ACCOUNT.get("A5_Printer")
-                logging.debug("Setting Queue to A5 Printer: %s", PRINTER_ID)
+        if IS_A5 and "A5_Printer" in ACCOUNT.keys():
+            PRINTER_ID = ACCOUNT.get("A5_Printer")
+            logging.debug("Setting Queue to A5 Printer: %s", PRINTER_ID)
 
         # New Printer to config
         if PRINTER_FOUND is not None:
